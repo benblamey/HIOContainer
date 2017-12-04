@@ -4,6 +4,8 @@ import datetime
 from haste_storage_client.core import HasteStorageClient
 from keystoneauth1.identity import v3
 
+auth = None
+
 def split_string(s):
     for i in range(len(s)):
         if s[i] == "}":
@@ -12,7 +14,7 @@ def split_string(s):
 
     return eval(s[0:index]), s[-(len(s)-index):]
 
-def image_summation(input):
+def extract_features(input):
     print "Histrogrm function"
 
     # Discard bmp header
@@ -20,59 +22,55 @@ def image_summation(input):
     import io
     import numpy as np
 
-    d, im = split_string(input)
+    # Separate metadata and image and read image
+
+    metadata, im = split_string(input)
 
     image = Image.open(io.BytesIO(im))
-    print "Image size: " + str(image.size)
 
-    s = {'Image sum': str(np.sum(image)), 'well': str(d.get('well')), 'accuired': str(d.get('time')), 'containerID': commands.getoutput('hostname'), 'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    # Calculate interesting measurements
 
-    file = open("testfile.txt",'a')
-    file.write(str(s) +  "\n")
-    file.close()
+    metadata['ImageSum'] = str(np.sum(image))
 
-    imageSum = str(np.sum(image))
-    well = str(d.get('well'))
-    timePoint = str(d.get('time'))
+    metadata['containerID'] = commands.getoutput('hostname')
 
-    containerID = commands.getoutput('hostname')
 
-    timeStamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    u_name = d.get('username')
-    pwd = d.get('password')
-    expID = str(d.get('experimentID'))
-
+    # Read useraneme and password for acces to SNIC
+    u_name = str(metadata.get('username'))
+    pwd = str(metadata.get('password'))
+    expID = str(metadata.get('experimentID'))
+    del metadata['username']
+    del metadata['password']
+    del metadata['experimentID']
 
     # Create a password auth plugin
     # See: https://docs.openstack.org/keystoneauth/latest/api/keystoneauth1.identity.v3.html#module-keystoneauth1.identity.v3.password
-    auth = v3.Password(auth_url='https://hpc2n.cloud.snic.se:5000/v3/',
-                      username=u_name, 
-                      password=pwd,
-                      user_domain_name='snic',
-                      project_name='SNIC 2017/13-31',  # Haste
-                      project_domain_name='snic')
+    global auth
+
+    if auth is None:
+        auth = v3.Password(auth_url='xxx',
+                          username=u_name, 
+                          password=pwd,
+                          user_domain_name='xxx',
+                          project_name='xxx',  # Haste
+                          project_domain_name='xxx')
 
     # Identifies both the experiment, and the session (ie. unique each time the stream starts),
     # for example, this would be a good format - this needs to be generated at the stream edge.
     stream_id = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
 
     client = HasteStorageClient(stream_id,
-                                '192.168.1.10',  # IP address of database server.
+                                '130.xxx.yyy.zz',  # IP address of database server.
                                 27017,
                                 auth)
 
-    blob = b'this is a binary blob eg. image data.'
+    #blob = b'this is a binary blob eg. image data.'
     timestamp_cloud_edge = time.time()
 
     client.save(timestamp_cloud_edge,
                 (12.34, 56.78),
                 im,
-                {'Image_sum': imageSum,  # bag of extracted features here
-                 'well': well,
-                 'time_point': timePoint,
-                 'ContainerID': containerID,
-                 'timeStamp': timeStamp})
+                metadata)
 
     client.close()
 
@@ -417,7 +415,7 @@ if __name__ == '__main__':
             """
             User-Code::::
             """
-            image_summation(str(data))
+            extract_features(str(data))
 
             # encoder = zlib.compressobj()
             # compressed_feature = encoder.compress(pickle.dumps(feature_list)) + encoder.flush()
