@@ -17,4 +17,4 @@ RUN git clone https://github.com/benblamey/HasteStorageClient.git;cd /app/HasteS
 EXPOSE 80
 
 # Run app.py when the container launch
-CMD ["python", "batch_sum.py"]
+CMD ["python", "function.py"]
