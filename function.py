@@ -6,18 +6,26 @@ from keystoneauth1.identity import v3
 
 auth = None
 
+# Review: this file is too long. HIO related stuff should be its own library you can import anyway
+
 def split_string(s):
+    # Find last occurance of '}'
+    # Review: what if part of the image data looks  like a } in ASCII?
+    # Review: would it be better to use length-prefix based approach here?
     for i in range(len(s)):
         if s[i] == "}":
             index = i+1
-            break;
+            break
 
+    # More secure to use pickle functions than call eval() on untrusted binary blob?
     return eval(s[0:index]), s[-(len(s)-index):]
 
+# Review: since the process needs to be long running- suggest you wrap this function in a catch-all block, log+swallow all the exceptions, this way, the node won't 'crash' if there is an issue with one message
 def extract_features(input):
-    print "Histrogrm function"
+    # Review - arn't we using python 3.x - use print()?
+    print "Histogram function"
 
-    # Discard bmp header
+    # Discard bmp header # Review: see what you mean, but this comment is confusing
     from PIL import Image
     import io
     import numpy as np
@@ -32,10 +40,14 @@ def extract_features(input):
 
     metadata['ImageSum'] = str(np.sum(image))
 
+    # Review: This is slow, do it once on startup
     metadata['containerID'] = commands.getoutput('hostname')
 
 
+    # Review, break up this into some smaller functions
+
     # Read useraneme and password for acces to SNIC
+    # review: use JSON config based approach, mount it into the container. This will considerably simplify all this.
     u_name = str(metadata.get('username'))
     pwd = str(metadata.get('password'))
     expID = str(metadata.get('experimentID'))
@@ -55,12 +67,15 @@ def extract_features(input):
                           project_name='xxx',  # Haste
                           project_domain_name='xxx')
 
+
+    # Review: we can read this directly  from the metadata using Lovisa's code.
     # Identifies both the experiment, and the session (ie. unique each time the stream starts),
     # for example, this would be a good format - this needs to be generated at the stream edge.
     stream_id = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
 
+    # Review: maintain a map to cache instances of the HasteStorageClient. HasteStorageClient will need to handle token renewal.
     client = HasteStorageClient(stream_id,
-                                '130.xxx.yyy.zz',  # IP address of database server.
+                                '130.xxx.yyy.zz',  # IP address of database server. # Review: this can come from config
                                 27017,
                                 auth)
 
@@ -68,12 +83,13 @@ def extract_features(input):
     timestamp_cloud_edge = time.time()
 
     client.save(timestamp_cloud_edge,
-                (12.34, 56.78),
+                (12.34, 56.78), # Review: Spatial info should be read from simulator message.
                 im,
                 metadata)
 
     client.close()
 
+# All this stuff should be in its own module
 
 """
 Step 1: Check for dependency
