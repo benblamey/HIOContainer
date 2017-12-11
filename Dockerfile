@@ -11,7 +11,9 @@ ADD . /app
 RUN pip install urllib3
 RUN pip install Pillow
 RUN pip install numpy
-RUN git clone https://github.com/benblamey/HasteStorageClient.git;cd /app/HasteStorageClient;pip install -e .
+
+# Checkout and install specific version of Haste Storage Client:
+RUN git clone https://github.com/benblamey/HasteStorageClient.git;cd /app/HasteStorageClient;git checkout tags/v0.3;pip install -e .
 
 # Make port 80 available to the world outside this container
 EXPOSE 80
