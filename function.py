@@ -6,7 +6,48 @@ from keystoneauth1.identity import v3
 
 auth = None
 
-def split_string(s):
+clients = {}
+
+# TODO: move to gitcrypted JSON file, mounted into container
+haste_storage_client_config = {
+    'haste_metadata_server': {
+        'host': '192.168.1.10',
+        'port': 27017
+    },
+    'os_swift': {
+        # See: https://docs.openstack.org/keystoneauth/latest/
+        #   api/keystoneauth1.identity.v3.html#module-keystoneauth1.identity.v3.password
+        'username': u_name,
+        'password': pwd,
+        'project_name': 'SNIC 2017/13-31',
+        'user_domain_name': 'snic',
+        'auth_url': 'https://hpc2n.cloud.snic.se:5000/v3/',
+        'project_domain_name': 'snic'
+    }
+}
+
+
+def get_client(stream_id):
+    if clients['stream_id'] is None:
+        # Identifies both the experiment, and the session (ie. unique each time the stream starts),
+        # for example, this would be a good format - this needs to be generated at the stream edge.
+        # stream_id = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
+        # interestingness_model = RestInterestingnessModel('http://localhost:5000/model/api/v0.1/evaluate')
+        client = HasteStorageClient(stream_id,
+                                    config=haste_storage_client_config,
+                                    # interestingness_model=interestingness_model,
+                                    # storage_policy=[(0.5, 1.0, OS_SWIFT_STORAGE)],
+                                    # map 0.5<=interestingness<=1.0 to OS swift.
+                                    # default_storage=TRASH # discard blobs which don't match
+                                    )
+        clients[stream_id] = client
+
+    # TODO: close all clients on shutdown hook?
+
+    return clients[stream_id]
+
+
+def split_hio_data(s):
     for i in range(len(s)):
         if s[i] == "}":
             index = i+1
@@ -14,8 +55,8 @@ def split_string(s):
 
     return eval(s[0:index]), s[-(len(s)-index):]
 
-def extract_features(input):
-    print "Histrogrm function"
+def process_message(message):
+    print("Histrogrm function")
 
     # Discard bmp header
     from PIL import Image
@@ -24,17 +65,28 @@ def extract_features(input):
 
     # Separate metadata and image and read image
 
-    metadata, im = split_string(input)
+    metadata, im = split_hio_data(message)
 
     image = Image.open(io.BytesIO(im))
 
+    process_image(im, image, metadata)
+
+# run this on your laptop for testing
+def test_image_analysis():
+    # TODO - add image (to the repo)
+    # im =
+    # metadata = {
+    #  stream_id: = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
+    # }
+    # Needs to match the metadata format here:
+    # https://github.com/LovisaLugnegard/exjobb/blob/master/simulator_no_flask.py, line 69
+    process_image(im, image, metadata)
+
+
+def process_image(im, image, metadata):
     # Calculate interesting measurements
-
     metadata['ImageSum'] = str(np.sum(image))
-
     metadata['containerID'] = commands.getoutput('hostname')
-
-
     # Read useraneme and password for acces to SNIC
     u_name = str(metadata.get('username'))
     pwd = str(metadata.get('password'))
@@ -42,37 +94,27 @@ def extract_features(input):
     del metadata['username']
     del metadata['password']
     del metadata['experimentID']
-
-    # Create a password auth plugin
-    # See: https://docs.openstack.org/keystoneauth/latest/api/keystoneauth1.identity.v3.html#module-keystoneauth1.identity.v3.password
-    global auth
-
-    if auth is None:
-        auth = v3.Password(auth_url='xxx',
-                          username=u_name, 
-                          password=pwd,
-                          user_domain_name='xxx',
-                          project_name='xxx',  # Haste
-                          project_domain_name='xxx')
-
     # Identifies both the experiment, and the session (ie. unique each time the stream starts),
     # for example, this would be a good format - this needs to be generated at the stream edge.
-    stream_id = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
 
-    client = HasteStorageClient(stream_id,
-                                '130.xxx.yyy.zz',  # IP address of database server.
-                                27017,
-                                auth)
 
-    #blob = b'this is a binary blob eg. image data.'
-    timestamp_cloud_edge = time.time()
+
+    #stream_id = datetime.datetime.today().strftime('%Y_%m_%d__%H_%M_%S') + "_" + expID
+
+
+    # blob = b'this is a binary blob eg. image data.'
+
+
+    client = get_client(metadata['stream_id'])
+
+    print(metadata)
+    timestamp_cloud_edge = metadata['timestamp']
 
     client.save(timestamp_cloud_edge,
                 (12.34, 56.78),
                 im,
                 metadata)
-
-    client.close()
+    #client.close()
 
 
 """
@@ -80,8 +122,8 @@ Step 1: Check for dependency
 """
 import pkgutil
 
-s = pkgutil.find_loader('urllib3')
-if not s:
+socket = pkgutil.find_loader('urllib3')
+if not socket:
     raise Exception("urllib3 module has not been installed.")
 
 """
@@ -158,7 +200,7 @@ class Setting(object):
             if Services.is_valid_ipv4(Setting.__node_addr) or Services.is_valid_ipv6(Setting.__node_addr):
                 return None
 
-            print "Cannot get node ip address!"
+            print("Cannot get node ip address!")
 
     @staticmethod
     def get_node_name():
@@ -354,24 +396,24 @@ if __name__ == '__main__':
     """
     Setting.set_params_from_env()
 
-    s = None
+    socket = None
     for res in socket.getaddrinfo(Setting.get_node_container_addr(), Setting.get_node_data_port(), socket.AF_UNSPEC,
                                   socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
         af, socktype, proto, canonname, sa = res
         try:
-            s = socket.socket(af, socktype, proto)
+            socket = socket.socket(af, socktype, proto)
         except socket.error as msg:
-            s = None
+            socket = None
             continue
         try:
-            s.bind(sa)
-            s.listen(1)
+            socket.bind(sa)
+            socket.listen(1)
         except socket.error as msg:
-            s.close()
-            s = None
+            socket.close()
+            socket = None
             continue
         break
-    if s is None:
+    if socket is None:
         print 'Open Socket Error'
         sys.exit(BatchErrorCode.OPEN_SOCKET_ERROR)
 
@@ -384,7 +426,7 @@ if __name__ == '__main__':
             time2 = time3 = time.time()
             if len(data) == 0:
                 # No data return from the system, waiting for stream.
-                conn, addr = s.accept()
+                conn, addr = socket.accept()
                 print 'Streaming from ', addr[0], ":", addr[1]
 
                 # Extracting object id
@@ -415,7 +457,7 @@ if __name__ == '__main__':
             """
             User-Code::::
             """
-            extract_features(str(data))
+            process_message(str(data))
 
             # encoder = zlib.compressobj()
             # compressed_feature = encoder.compress(pickle.dumps(feature_list)) + encoder.flush()
@@ -424,10 +466,10 @@ if __name__ == '__main__':
 
     except IOError as e:
         print str(e)
-        s.close()
+        socket.close()
         sys.exit(BatchErrorCode.DATA_SOCKET_ERROR)
 
-    s.close()
+    socket.close()
 
     print "Terminated by controller."
     sys.exit(BatchErrorCode.SUCCESS)
