@@ -16,5 +16,8 @@ RUN git clone https://github.com/benblamey/HasteStorageClient.git;cd /app/HasteS
 # Make port 80 available to the world outside this container
 EXPOSE 80
 
+# Map the HASTE client config (file not needed until the container is run)
+VOLUME ["/haste_storage_client_config.json"]
+
 # Run app.py when the container launch
 CMD ["python", "function.py"]
